@@ -12,5 +12,8 @@
 #define IS_BIT(bit) (bit == 0 || bit == 1)
 
 int scannerHideMessage(FILE*, jpegStats*, char*, long);
+
 char* scannerReadMessage(FILE*, jpegStats*, long);
+
+long getMaxMessageSize(FILE*, jpegStats*, long);
 #endif

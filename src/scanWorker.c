@@ -202,10 +202,17 @@ int readComponentElement(scanWorker *scanner, mcu *mcuData,
     return 0;
 }
 
+/**
+ * Checks to see that stats->restartInterval MCUs have been read and, if so,
+ * reads past the restart interval and any useless bits in between the
+ * interval marker and the bit referenced by scanner's attributes. returns 1
+ * in the case of error (or when isEndOfScan(scanner, scanner->bytesRead)) is
+ * true.
+ */
 int skipPastRestartInterval(scanWorker *scanner, jpegStats *stats) {
     if (stats->restartInterval != 0 &&
         scanner->mcusRead % stats->restartInterval == 0) {
-        // skip past useless bits
+        // Skip past useless bits
         while (scanner->bitCursor != 0) {
             unsigned char bitRead = nextBit(scanner);
             if (bitRead == END_OF_FILE_ENCOUNTERED) {
@@ -215,13 +222,15 @@ int skipPastRestartInterval(scanWorker *scanner, jpegStats *stats) {
                 assert(bitRead == 1);
             #endif
         }
+        // Make sure not at EOS
+        if (isEndOfScan(scanner, scanner->bytesRead)) {
+            return 1;
+        }
         #ifdef TESTING
-            #ifdef TESTING2
-                printf("RESTART ENCOUNTERED: %hX %hX %hX\n",
-                        scanner->scanBuffer[scanner->bytesRead],
-                        scanner->scanBuffer[scanner->bytesRead + 1],
-                        scanner->scanBuffer[scanner->bytesRead + 2] );
-            #endif
+            printf("RESTART ENCOUNTERED: %hX %hX ||%hX\n",
+                    scanner->scanBuffer[scanner->bytesRead],
+                    scanner->scanBuffer[scanner->bytesRead + 1],
+                    scanner->scanBuffer[scanner->bytesRead + 2] );
             assert(scanner->scanBuffer[scanner->bytesRead] == 0xFF);
             unsigned char p2 = scanner->scanBuffer[scanner->bytesRead + 1];
             assert(p2 >= 0xD0 && p2 <= 0xD7);
@@ -565,10 +574,63 @@ int processBit(scanWorker *sw, jpegStats *stats, unsigned char *bit) {
     } else {
         performWrite(sw, sw->mcu, *bit);
     }
-    advanceMCUPointer(sw, stats);
+    if (advanceMCUPointer(sw, stats)) {
+        return 1;
+    }
     return 0;
 }
 
+/**
+ * Finds the number of characters that can be written into jpeg file with
+ * jpegStats stats and size fileLength. After this is executed, file's cursor
+ * will remain unchanged, as well as its contents
+ *
+ * Assumes file's cursor is right after SOS segment (points to first bit of
+ * actual, quantized data).
+ */
+long getMaxMessageSize(FILE *file, jpegStats *stats, long fileLength) {
+    #ifdef TESTING
+        puts("Reading message from JPEG");
+    #endif
+    scanWorker *sw = initScanWorker(file, stats, fileLength);
+    if (sw == NULL) {
+        return -1;
+    }
+
+    // Get number of bits that are readable
+    long counter = 0;
+    while (sw->bytesRead < sw->totalSize) {
+        // Read bit and append to buffer
+        unsigned char bitRead = READ_MESSAGE_CODE_PROCESSOR;
+        if (processBit(sw, stats, &bitRead)) {
+            if (isEndOfScan(sw, sw->bytesRead)) {
+                break;
+            } else {
+                destroyScanWorker(sw);
+                return -1;
+            }
+        }
+        counter++;
+        #ifdef TESTING
+            assert(IS_BIT(bitRead));
+        #endif
+    }
+    #ifdef TESTING
+        printf("FINAL ON MCUS READ: %d\n", sw->mcusRead);
+        printf("TOTAL MCUS IN FILE: %d\n", stats->mcuCount);
+    #endif
+    destroyScanWorker(sw);
+    return counter / 8 - 1;
+}
+
+/**
+ * Reads hidden message in SOS of jpeg file file with data stored in stats and
+ * of size fileLength bytes. Returns the message on success and returns NULL if
+ * a failiure is detected.
+ *
+ * Assumes that file cursor points to first bit of actual SOS data and that a
+ * message was hidden in file
+ */
 char* scannerReadMessage(FILE *file, jpegStats *stats, long fileLength) {
     #ifdef TESTING
         puts("Reading message from JPEG");
@@ -586,7 +648,6 @@ char* scannerReadMessage(FILE *file, jpegStats *stats, long fileLength) {
         destroyScanWorker(sw);
         return NULL;
     }
-
     // Read bytes of hidden message bit by bit
     while (sw->bytesRead < sw->totalSize) {
         char dataBuffer = 0;
@@ -597,7 +658,6 @@ char* scannerReadMessage(FILE *file, jpegStats *stats, long fileLength) {
             #ifdef TESTING
                 assert(IS_BIT(bitRead));
             #endif
-
             dataBuffer = dataBuffer | (bitRead << (7 - i));
         }
         printf("DATA READ FROM JPEG FILE: %c\n", dataBuffer);
@@ -605,7 +665,6 @@ char* scannerReadMessage(FILE *file, jpegStats *stats, long fileLength) {
         if (dataBuffer == 0) {
             break;
         }
-
         // Increment counter and double bufferSize if need be
         counter++;
         if (counter == bufferSize) {

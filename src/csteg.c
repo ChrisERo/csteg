@@ -57,20 +57,17 @@ int isNotJPEG(char *fileName, FILE *filePointer ) {
  * Asks user to type in a message and returns a string containing the first 1000 bytes of that message 
  * and returns that message in allocated memory.
  */
-char* askForMessage(char* filePath) {
-    printf("Write a message to hide in %s with a maximum of %d characters:\n", 
-            filePath, MAX_MESSAGE_LENGTH_PLUS_1 - 1);
+char* askForMessage(char* filePath, long maxMessageSize) {
+    printf("Write a message to hide in %s with a maximum of %ld characters:\n",
+            filePath, maxMessageSize);
     // Use calloc to make sure that NULL is in array
-    char* mssg = (char*)calloc(MAX_MESSAGE_LENGTH_PLUS_1, 1);
-    if (fgets(mssg, MAX_MESSAGE_LENGTH_PLUS_1, stdin)) {
-        // To ensure that last element in mssg is a 0 in case user input 
-        // exceedes 1000 characters.
-        mssg[MAX_MESSAGE_LENGTH_PLUS_1 - 1] = 0;
+    char* mssg = (char*)calloc(maxMessageSize+1, 1);  // +1 for string end
+    if (fgets(mssg, maxMessageSize+1, stdin)) {
+        mssg[maxMessageSize] = 0;
         return mssg;
     }
     return NULL;
 }
-
 
 /**
  * Sets *jpgetStatsHolderHelper to a jpegStats struct with data provided from
@@ -374,14 +371,21 @@ int hideMessage(char* filePath, char* input) {
     if (jpegStats == NULL) {
         return 1;
     }
-
     long fileSize = getFileSize(filePath);
-    if (input) { // TODO Implement
+    puts("Loading Max Message Size");
+    long maxMessageSize = getMaxMessageSize(imgFile, jpegStats, fileSize);
+    if (maxMessageSize <= 0) {
+        printf("ERROR Loading max message size\n");
+        destroyJpegStats(jpegStats);
+        return 1;
+    }
+
+    if (input) { // TODO Implement if desire
         puts("Loading input");
         //scannerHideMessage(imgFile, jpegStats, input, fileSize);
     }
     else {
-        char* message = askForMessage(filePath);
+        char* message = askForMessage(filePath, maxMessageSize);
         scannerHideMessage(imgFile, jpegStats, message, fileSize);
         //free(message);
     }
