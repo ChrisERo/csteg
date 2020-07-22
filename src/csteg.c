@@ -367,6 +367,9 @@ char* loadMessage(char* filePath, long maxMessageSize) {
     }
 
     mssg[allocSize-1] = 0;  // Do this to ensure end of string
+    #ifdef TESTING
+        printf("MESSAGE TO HIDE:\n%s\n", mssg);
+    #endif
     return mssg;
 }
 
@@ -397,7 +400,8 @@ int extractMessage(char *imgFilePath, char *outputFile) {
 }
 
 /**
- * Hides a user-defined message inside JPG pointed to by filePath, modifying
+ * Hides a user-defined message (from inputFilePath text file or stdin if
+ * inputFilePath is NULL) inside JPG pointed to by filePath, modifying
  * that exact file. input is NULL; only used to to match type of
  * operation variable in main()
  */
@@ -417,8 +421,8 @@ int hideMessage(char* filePath, char* inputFilePath) {
     }
 
     // Get message and hide it in imgFile
-    int (*obtainMssg)(char*,long) = inputFilePath ? loadMessage : askForMessage;
-    char *message = obtainMssg(filePath, maxMessageSize);
+    char*(*obtainMssg)(char*,long) = inputFilePath ? loadMessage: askForMessage;
+    char *message = obtainMssg(inputFilePath, maxMessageSize);
     if (message) {
         scannerHideMessage(imgFile, jpegStats, message, fileSize);
     }
@@ -457,32 +461,32 @@ int checkArgs(int argc, char **argv, char **tag, char **jpgFile,
                 char **mssgFilePath) {
     // Make sure right number of arguments
     if (argc <= 2) {
-        return sprintf("ERROR: should be executed with at least %d parameters \
-                        and at most %d.\n", 2, 3);
+        printf("ERROR: should be executed with at least %d parameters and at most %d.\n",
+                2, 3);
         return 1;
     }
     // Check that tag is valid
     *tag = argv[1];
-    if (tag[0] != '-' || tag[1] != 'w' && tag[1] != 'r') {
-        printf(ERROR_TAG_MESSAGE);
+    if ((*tag)[0] != '-' || ((*tag)[1] != 'w' && (*tag)[1] != 'r')) {
+        printf("ERROR: invalid tag %s, %c\n", *tag, *tag[1]);
         return 1;
     }
     // Basic check on jpeg argument
     // Make sure file ends in a jpeg extenssion and that it exists
     *jpgFile = argv[2];
-    size_t dotIndex = strlen(jpgFile) - 1;
+    size_t dotIndex = strlen(*jpgFile) - 1;
     for (; dotIndex > 0; dotIndex--) {
-        if (jpgFile[dotIndex] == '.')
+        if ((*jpgFile)[dotIndex] == '.')
             break;
     }
-    if (jpgFile[dotIndex] != '.' ||
-        (strcmp(&jpgFile[dotIndex], ".jpg") != 0 &&
-        strcmp(&jpgFile[dotIndex], ".jpeg") != 0 &&
-        strcmp(&jpgFile[dotIndex], ".jpe") != 0 &&
-        strcmp(&jpgFile[dotIndex], ".jfif" ) != 0) ||
-        !fileExists(jpgFile)) {
-        printf("ERROR: Invalid image file path %s\n \tMake sure the file \
-                exists and is a jpg", jpgFile);
+    if ((*jpgFile)[dotIndex] != '.' ||
+        (strcmp(&((*jpgFile)[dotIndex]), ".jpg") != 0 &&
+        strcmp(&((*jpgFile)[dotIndex]), ".jpeg") != 0 &&
+        strcmp(&((*jpgFile)[dotIndex]), ".jpe") != 0 &&
+        strcmp(&((*jpgFile)[dotIndex]), ".jfif" ) != 0) ||
+        !fileExists(*jpgFile)) {
+        printf("ERROR: Invalid image file path %s\n \tMake sure the file exists and is a jpg\n",
+               *jpgFile);
         return 1;
     }
     // Do check on optional message text file
@@ -494,14 +498,14 @@ int checkArgs(int argc, char **argv, char **tag, char **jpgFile,
             printf("ERROR: Invalid text file %s\n", *mssgFilePath);
             return 1;
         }
-        char *ending = &(*mssgFilePath[strlen(*mssgFilePath) - 4]);
+        char *ending = &((*mssgFilePath)[strlen(*mssgFilePath) - 4]);
         if (strcmp(ending, ".txt") != 0) {
             printf("ERROR: Invalid text file %s\n", *mssgFilePath);
             return 1;
         }
         // Existance check
-        if (tag[1] == 'w' && !fileExists(mssgFilePath)) {
-            printf("ERROR: If hiding a message, %s must exist\n", mssgFilePath);
+        if (*tag[1] == 'w' && !fileExists(*mssgFilePath)) {
+            printf("ERROR: If hiding a message, %s must exist\n",*mssgFilePath);
             return 1;
         }
     }
@@ -536,7 +540,7 @@ int main(int argc, char** argv) {
             operation = &hideMessage;
             break;
         default:
-            printf(ERROR_TAG_MESSAGE);
+            // Should never happen because of checkArgs
             return 1;
     }
     

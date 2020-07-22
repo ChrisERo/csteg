@@ -58,7 +58,4 @@ typedef struct jpegStats {
 #define NUMBER_OF_BITMASKS 4
 #define BITS_PER_MASK 2
 
-// ERROR MESSAGES
-#define ERROR_TAG_MESSAGE "ERROR NOT VALID TAG\nThe first parameter must be either -e or -h\n"
-
 #endif
