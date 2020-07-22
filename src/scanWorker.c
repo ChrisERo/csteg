@@ -21,7 +21,8 @@ typedef struct mcu {
 // TODO: use totalSize somewhere
 typedef struct scanWorker {
     unsigned char* scanBuffer;  // Stores all data after SOS segment
-    unsigned long totalSize;  // size of buffer;
+    unsigned long totalSize;  // Space alloced for scanBuffer;
+                              // there should be totalSize bytes to write to jpg
     unsigned int mcusRead;  // Number of MCUs read  by scanWorker
     
     unsigned long bytesRead; // Number of bytes from scanBuffer read
@@ -53,6 +54,7 @@ mcu* initMCU(jpegStats *stats) {
 /**
  * Returns 1 if index corresponds to a position afer the scan of the image and
  * 0 otherwise
+ * If index is > than scanBuffer size, returns true
  */
 char isEndOfScan(scanWorker *sw, unsigned long index) {
     if (index >= sw->totalSize) {
@@ -330,7 +332,8 @@ void destroyScanWorker(scanWorker *scanner) {
  * of the first CB of the first MCU of the JPG referenced by file
  * 
  * scanner->totalSize is guaranteed to be the length of the part of file not yet
- * read
+ * read after execution
+ * 
  * 
  * After execution, file's cursor is where it was before function call
  * 
@@ -419,12 +422,12 @@ int mcuNotPropper(scanWorker *sw, mcu *mcu, jpegStats *stats) {
         return 1;
     }
     
-    // 2. Flipping bit of MCU DC cannot turn an FF to FE or FE to FF
-    // TODO: Get rid of this later once handle adding extra 0 at right time
-    unsigned long bufferIndex = mcu->index;
-    if (sw->scanBuffer[bufferIndex] >= 0xFE) {
-        return 1;
-    }
+    // // 2. Flipping bit of MCU DC cannot turn an FF to FE or FE to FF
+    // // TODO: Get rid of this later once handle adding extra 0 at right time
+    // unsigned long bufferIndex = mcu->index;
+    // if (sw->scanBuffer[bufferIndex] == 0xFF) {
+    //     return 1;
+    // }
 
    return 0;
 }
@@ -480,10 +483,77 @@ int advanceMCUPointer(scanWorker *sw, jpegStats *stats) {
 }
 
 /**
+ * Code for increasing the size of the buffer if program just converted a byte
+ * in sw->scanBuffer to 0xFF, the one referenced by mcu.
+ */
+int growScanBuffer(scanWorker *sw, mcu *mcu) {
+    #ifdef TESTING
+        assert(sw->bytesRead < sw->totalSize);
+        assert(sw->scanBuffer[mcu->index] == 0xFF);
+        assert((sw->bytesRead == mcu->index && sw->bitCursor == 1+mcu->bit) || 
+               (sw->bitCursor == 0 && mcu->bit == 7 && 
+               sw->bytesRead > mcu->index));
+    #endif
+    unsigned long oldSize = sw->totalSize;
+    sw->totalSize += 1;
+    sw->scanBuffer = realloc(sw->scanBuffer, sw->totalSize);
+    if (sw->scanBuffer == NULL) {
+        puts("ERROR REALLOCATING BUFFER OF SW");
+        return 1;
+    }
+    memcpy(&sw->scanBuffer[mcu->index + 2], &sw->scanBuffer[mcu->index + 1], 
+           oldSize - (mcu->index+1));
+    sw->scanBuffer[mcu->index + 1] = 0;
+
+    if (sw->bytesRead > mcu->index) {
+        #ifdef TESTING
+            assert(sw->bitCursor == 0 && mcu->bit == 7);
+        #endif
+        sw->bytesRead++;
+    }
+
+    return 0;
+}
+
+/**
+ * Code for decreasing the size of the buffer if program just converted a byte
+ * in sw->scanBuffer from 0xFF to another value, the one referenced by mcu.
+ */
+int shrinkScanBuffer(scanWorker *sw, mcu *mcu) {
+    #ifdef TESTING
+        assert(sw->bytesRead < sw->totalSize);
+        assert(sw->scanBuffer[mcu->index] != 0xFF);
+        assert((sw->bytesRead == mcu->index && sw->bitCursor == 1+mcu->bit) || 
+               (sw->bitCursor == 0 && mcu->bit == 7 && 
+               sw->bytesRead > mcu->index));
+    #endif
+    unsigned long oldSize = sw->totalSize;
+    memcpy(&sw->scanBuffer[mcu->index + 1], &sw->scanBuffer[mcu->index + 2], 
+           oldSize - (mcu->index+2));
+    sw->totalSize -= 1;
+    sw->scanBuffer = realloc(sw->scanBuffer, sw->totalSize);
+    if (sw->scanBuffer == NULL) {
+        puts("ERROR REALLOCATING BUFFER OF SW");
+        return 1;
+    }
+    // Make sw->bytesRead and bit cursor equal to the bit right after bit 
+    // referneced by mcu
+    sw->bytesRead = mcu->index;
+    sw->bitCursor = mcu->bit;
+    nextBit(sw);
+    // Done
+    return 0;
+}
+
+
+/**
  * Writes bit onto last bit of AC pointed to by mcu inside sw->scanBuffer
  * under assumptoin that mcu is propper, !mcuNotPropper(sw, sw->mcu, *)
  * 
  * Returns 0 on success and 1 on failiure
+ * 
+ * Assumes that mcu points to the data bit right before the one referenced by 
+ * sw's pointers
  */
 void performWrite(scanWorker *sw, mcu *mcu, unsigned char bit) {
     unsigned long index= mcu->index;
@@ -493,8 +563,22 @@ void performWrite(scanWorker *sw, mcu *mcu, unsigned char bit) {
     #ifdef TESTING
         assert(IS_BIT((sw->scanBuffer[index] & mask) >> shift));
     #endif
+    unsigned char byteBeforeChange = sw->scanBuffer[index]; // Used for shrinking check
     if ((sw->scanBuffer[index] & mask) >> shift != bit) {
+        // Actually make a change
         sw->scanBuffer[index] = sw->scanBuffer[index] ^ mask;
+        if (sw->scanBuffer[index] == 0xFF) {
+            // Grow buffer
+            #ifdef TESTING
+                assert(byteBeforeChange != 0xFF);
+            #endif
+            growScanBuffer(sw, mcu);
+        } else if (byteBeforeChange == 0xFF) {
+            #ifdef TESTING
+                assert(sw->scanBuffer[index] != 0xFF);
+            #endif
+            shrinkScanBuffer(sw, mcu);
+        }
     } // else no need to modify coeficient
 }
 
@@ -540,6 +624,9 @@ int processBit(scanWorker *sw, jpegStats *stats, unsigned char *bit) {
         }
     }
 
+    #ifdef TESTING
+        printf("WORKING WITH BIT %ld %d \n", sw->mcu->index, sw->mcu->bit);
+    #endif
     // Write/Read bit and move cursor past AC just modified
     if (*bit == READ_MESSAGE_CODE_PROCESSOR) {
         *bit = performRead(sw, sw->mcu);
