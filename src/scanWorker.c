@@ -83,8 +83,7 @@ unsigned char nextBit(scanWorker* sw) {
     data = data >> shiftValue;
     
     sw->bitCursor++;  // increment bitCursor since one bit has been read
-    #ifdef TESTING2
-        printf("\tBIT READ: %d\n", data);
+    #ifdef TESTING
         assert(data == 0 || data == 1);
         assert(sw->bitCursor <= 8);
     #endif
@@ -96,9 +95,6 @@ unsigned char nextBit(scanWorker* sw) {
         if (sw->bytesRead > 0 && sw->scanBuffer[sw->bytesRead] == 0 &&
             sw->scanBuffer[sw->bytesRead - 1] == 0xFF) {
             sw->bytesRead++;
-            #ifdef TESTING2
-                puts("\nSKIPING USELSS STUFF");
-            #endif
         }
     }
     return data;
@@ -119,10 +115,6 @@ unsigned char nextBit(scanWorker* sw) {
 int readComponentElement(scanWorker *scanner, mcu *mcuData,
                          dhtTrie *table, unsigned char isAc) {
     #ifdef TESTING
-        #ifdef TESTING2
-            printf("READING LENGTH: isAC: %d pointers: %ld|%d\n", 
-                                            isAc, mcuData->index, mcuData->bit);
-        #endif
         assert(isAc <= 1);
         assert(table != NULL);
     #endif
@@ -139,9 +131,7 @@ int readComponentElement(scanWorker *scanner, mcu *mcuData,
             return 1;
         }
     }
-    #ifdef TESTING2
-        printf("READ LENGTH\n");
-    #endif
+    
     unsigned char numBits = getValue(table); // length of coeficient in bits
     mcuData->index = scanner->bytesRead; // Note: this not needed
     if (numBits == EOB) { 
@@ -150,15 +140,10 @@ int readComponentElement(scanWorker *scanner, mcu *mcuData,
         mcuData->bitLength = 0;
         coeficientsRead = isAc ? MAX_AC_COEFFICIENTS - mcuData->acCurrentlyOn : 
                           1 ;
-        #ifdef TESTING2
-            puts("\tRAN INTO EOB\n");
-        #endif
+
     } else if(numBits == ZRL) { // 16 0s processed
         #ifdef TESTING
             assert(isAc);
-            #ifdef TESTING2
-                puts("\tRAN INTO ZRL\n");
-            #endif
         #endif
         mcuData->bit = ZRL_ENCOUNTERED;
         mcuData->bitLength = 0;
@@ -193,9 +178,6 @@ int readComponentElement(scanWorker *scanner, mcu *mcuData,
             return 1;
         }
         coeficientsRead++;
-        #ifdef TESTING2
-            printf("\tCOEFICIENTS READ: %u\n", coeficientsRead);
-        #endif
     }
 
     mcuData->acCurrentlyOn += coeficientsRead;
@@ -255,10 +237,6 @@ int loadNextMCU(mcu* mcuData, scanWorker* scanner, jpegStats* stats) {
         return 1;
     }
     scanner->onSecondChrominance = 0;
-    #ifdef TESTING2
-        puts("READING AN MCU\n");
-        printf("MCUS READ SO FAR: %d", scanner->mcusRead);
-    #endif
 
     // Skip past Y-components
     int colorId = Y_ID - 1;
@@ -475,9 +453,6 @@ int mcuNotPropper(scanWorker *sw, mcu *mcu, jpegStats *stats) {
 int advanceMCUPointer(scanWorker *sw, jpegStats *stats) {
     if (sw->mcu->acCurrentlyOn == MAX_AC_COEFFICIENTS) {
         // Move onto next MCU if at last chrominance
-        #ifdef TESTING2
-            puts("MAX|READ");
-        #endif
         if (sw->onSecondChrominance) {
             sw->onSecondChrominance = 0;
             return loadNextMCU(sw->mcu, sw, stats);
@@ -560,9 +535,6 @@ int processBit(scanWorker *sw, jpegStats *stats, unsigned char *bit) {
     // Use fact that only use Y,Cr,Cb with only 1 Cr and Cb entry per MCU
     // Find a decent chrominance value to work with
     while (mcuNotPropper(sw, sw->mcu, stats)) {
-        #ifdef TESTING2
-            puts("SKIPPING COEFICIENTS");
-        #endif
         if (advanceMCUPointer(sw, stats)) {
             return 1;
         }
@@ -661,7 +633,9 @@ char* scannerReadMessage(FILE *file, jpegStats *stats, long fileLength) {
             #endif
             dataBuffer = dataBuffer | (bitRead << (7 - i));
         }
-        printf("DATA READ FROM JPEG FILE: %c\n", dataBuffer);
+        #if TESTING
+            printf("DATA READ FROM JPEG FILE: %c\n", dataBuffer);
+        #endif
         mssg[counter] = dataBuffer;
         if (dataBuffer == 0) {
             break;

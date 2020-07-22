@@ -24,7 +24,7 @@ bin/csteg.o: src/csteg.c src/csteg.h src/scanWorker.h
 	gcc -c $(CFLAGS) -o $@ src/csteg.c
 
 # Don't use -c here, since need to link to create finished product
-csteg.bin: bin/*.o
+csteg.bin: src/*
 	gcc $(CFLAGS) -o $@ bin/*.o
 
 clean:

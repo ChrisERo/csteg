@@ -389,7 +389,7 @@ int extractMessage(char *imgFilePath, char *outputFile) {
         return 1;
     }
     FILE *out = fopen(outputFile, "w");
-    fprintf(out, "EXTRACTED MESSAGE FROM [%s]:\n%s\n\n", imgFilePath,
+    fprintf(out, "EXTRACTED MESSAGE FROM [%s]:\n%s", imgFilePath,
             hiddenMessage);
     fclose(out);
 
@@ -422,6 +422,7 @@ int hideMessage(char* filePath, char* inputFilePath) {
 
     // Get message and hide it in imgFile
     char*(*obtainMssg)(char*,long) = inputFilePath ? loadMessage: askForMessage;
+    inputFilePath = obtainMssg == askForMessage ? filePath : inputFilePath;
     char *message = obtainMssg(inputFilePath, maxMessageSize);
     if (message) {
         scannerHideMessage(imgFile, jpegStats, message, fileSize);
