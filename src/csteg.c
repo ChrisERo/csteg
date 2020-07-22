@@ -54,22 +54,6 @@ int isNotJPEG(char *fileName, FILE *filePointer ) {
 }
 
 /**
- * Asks user to type in a message and returns a string containing the first 1000 bytes of that message 
- * and returns that message in allocated memory.
- */
-char* askForMessage(char* filePath, long maxMessageSize) {
-    printf("Write a message to hide in %s with a maximum of %ld characters:\n",
-            filePath, maxMessageSize);
-    // Use calloc to make sure that NULL is in array
-    char* mssg = (char*)calloc(maxMessageSize+1, 1);  // +1 for string end
-    if (fgets(mssg, maxMessageSize+1, stdin)) {
-        mssg[maxMessageSize] = 0;
-        return mssg;
-    }
-    return NULL;
-}
-
-/**
  * Sets *jpgetStatsHolderHelper to a jpegStats struct with data provided from
  * SOF-0 section. Serves as helper for getSOF0Data(), where length, height, and
  * numberOfComponentes of image jpegFile originate form.
@@ -290,8 +274,38 @@ int setFileCursor(FILE *jpegFile, dhts** dhtTables,
 }
 
 /**
+ * Advances imgFile cursor to SOS, storing pertinent info of said jpegFile
+ * in jpegStats. Assumes filePath references the file imgFile, which has byte
+ * read permissions
+ */
+jpegStats* getJpegStats(char *filePath, FILE *imgFile) {
+    dhts* dhtTables = NULL;  // pointer to dhtTable data of imgFile
+    jpegStats* jpegStats = NULL;
+
+    // Check if filePath is a jpeg and move cursor to SOS of JPG 
+    if(isNotJPEG(filePath, imgFile) || 
+       setFileCursor(imgFile, &dhtTables, &jpegStats)) {
+        // If either JPEG test or cursor setting fails,
+	    // Clear allocated data and return 1 (error)
+        printf("ISSUE with jpeg file: %s\n", filePath);
+        if(dhtTables != NULL) {
+            destroyDhts(dhtTables);
+        }
+        if (jpegStats != NULL) {
+            destroyJpegStats(jpegStats);
+        }
+	    fclose(imgFile);
+        return NULL;
+    }
+
+    free(dhtTables);  // Don't destroy since contents of dhtTables still used
+    return jpegStats;
+
+}
+
+/**
  * Given the name of a file, calculate its length in bytes.
- * 
+ *
  * Assumes filePath exists
  */
 long getFileSize(char* filePath) {
@@ -307,33 +321,55 @@ long getFileSize(char* filePath) {
 }
 
 /**
- * Advances imgFile cursor to SOS, storing pertinent info of said jpegFile
- * in jpegStats. Assumes filePath references the file imgFile, which has byte
- * read permissions
+ * Asks user to type in a message and returns a string containing the first
+ * maxMessageSize bytes of that message
+ * and returns that message in allocated memory.
  */
-jpegStats* getJpegStats(char *filePath, FILE *imgFile) {
-    dhts* dhtTables = NULL;  // pointer to dhtTable data of imgFile
-    jpegStats* jpegStats = NULL;
+char* askForMessage(char* filePath, long maxMessageSize) {
+    printf("Write a message to hide in %s with a maximum of %ld characters:\n",
+            filePath, maxMessageSize);
+    // Use calloc to make sure that NULL is in array
+    char* mssg = (char*)calloc(maxMessageSize+1, 1);  // +1 for string end
+    if (fgets(mssg, maxMessageSize+1, stdin)) {
+        mssg[maxMessageSize] = 0;
+        return mssg;
+    }
+    return NULL;
+}
 
-    // Check if filePath is a jpeg and move cursor to SOS of JPG 
-    if(isNotJPEG(filePath, imgFile) || 
-       setFileCursor(imgFile, &dhtTables, &jpegStats)) {
-        // If either JPEG test or cursor setting fails,
-	    // Clear allocated data and return 1 (error)
-        if(dhtTables != NULL) {
-            destroyDhts(dhtTables);
-        }
-        if (jpegStats != NULL) {
-            destroyJpegStats(jpegStats);
-        }
-	    fclose(imgFile);
+/**
+ * Reads data from filePath and stores at most maxMessageSize bytes in char
+ * array to return. Returns NULL if error occurred
+ */
+char* loadMessage(char* filePath, long maxMessageSize) {
+    printf("Loading at most %ld characters from %s:\n",
+            maxMessageSize, filePath);
+    // Use calloc to make sure that NULL is in array
+    size_t allocSize = maxMessageSize+1;
+    char* mssg = (char*)calloc(allocSize, 1);  // +1 for 0 btye end
+    if (mssg == NULL) {
+        printf("ERROR allocating space of size %ld", allocSize);
+        return NULL;
+    }
+    FILE *mssgFile = fopen(filePath, "r");
+    if (mssgFile == NULL) {
+        printf("ERROR reading file %s\n", filePath);
+        free(mssg);
         return NULL;
     }
 
-    free(dhtTables);  // Don't destroy since contents of dhtTables still used
-    return jpegStats;
+    // Read data from mssgFile into mssg buffer, then check if successful
+    size_t bytesRead = fread(mssg, 1, maxMessageSize, mssgFile);
+    if (bytesRead != maxMessageSize && !feof(mssgFile)) {
+        printf("ERROR reading file %s\n", filePath);
+        free(mssg);
+        return NULL;
+    }
 
+    mssg[allocSize-1] = 0;  // Do this to ensure end of string
+    return mssg;
 }
+
 
 int extractMessage(char *imgFilePath, char *outputFile) { 
     FILE *imgFile = fopen(imgFilePath, "rb");
@@ -353,7 +389,7 @@ int extractMessage(char *imgFilePath, char *outputFile) {
     fprintf(out, "EXTRACTED MESSAGE FROM [%s]:\n%s\n\n", imgFilePath,
             hiddenMessage);
     fclose(out);
-    
+
     free(hiddenMessage);
     fclose(imgFile);
     destroyJpegStats(jpegStats);
@@ -365,7 +401,7 @@ int extractMessage(char *imgFilePath, char *outputFile) {
  * that exact file. input is NULL; only used to to match type of
  * operation variable in main()
  */
-int hideMessage(char* filePath, char* input) {
+int hideMessage(char* filePath, char* inputFilePath) {
     FILE *imgFile = fopen(filePath, "r+b");  // pointer to jpg file
     jpegStats *jpegStats = getJpegStats(filePath, imgFile);
     if (jpegStats == NULL) {
@@ -380,18 +416,96 @@ int hideMessage(char* filePath, char* input) {
         return 1;
     }
 
-    if (input) { // TODO Implement if desire
-        puts("Loading input");
-        //scannerHideMessage(imgFile, jpegStats, input, fileSize);
-    }
-    else {
-        char* message = askForMessage(filePath, maxMessageSize);
+    // Get message and hide it in imgFile
+    int (*obtainMssg)(char*,long) = inputFilePath ? loadMessage : askForMessage;
+    char *message = obtainMssg(filePath, maxMessageSize);
+    if (message) {
         scannerHideMessage(imgFile, jpegStats, message, fileSize);
-        //free(message);
     }
 
+    // free alloced space
+    free(message);
     fclose(imgFile);
     destroyJpegStats(jpegStats);
+    return message == NULL; // Do check on obtainMssg success here!
+}
+
+/**
+ * Returns 1 if the file referenced by filePath exists and 0 otherwise
+ */
+int fileExists(char *filePath) {
+    FILE *file = fopen(filePath, "r");
+    if (file != NULL) {
+        fclose(file);
+        return 1;
+   } else {
+        return 0;
+   }
+}
+
+/**
+ * Returns 0 if the parameters passed into csteg.c are valid and also set
+ * *tag (determines read or write), *jpgFile (path to image in which to perform
+ * read or write), and *mssgFilePath (where to write or read message into)
+ * to specified values, otherwise return 1
+ *
+ * Assumes that if argv[i] is the address to an actual string for i in [0, argc)
+ * and that if, while reading a message and the text parameter is set, the
+ * parent of the specified path actually exists.
+ */
+int checkArgs(int argc, char **argv, char **tag, char **jpgFile,
+                char **mssgFilePath) {
+    // Make sure right number of arguments
+    if (argc <= 2) {
+        return sprintf("ERROR: should be executed with at least %d parameters \
+                        and at most %d.\n", 2, 3);
+        return 1;
+    }
+    // Check that tag is valid
+    *tag = argv[1];
+    if (tag[0] != '-' || tag[1] != 'w' && tag[1] != 'r') {
+        printf(ERROR_TAG_MESSAGE);
+        return 1;
+    }
+    // Basic check on jpeg argument
+    // Make sure file ends in a jpeg extenssion and that it exists
+    *jpgFile = argv[2];
+    size_t dotIndex = strlen(jpgFile) - 1;
+    for (; dotIndex > 0; dotIndex--) {
+        if (jpgFile[dotIndex] == '.')
+            break;
+    }
+    if (jpgFile[dotIndex] != '.' ||
+        (strcmp(&jpgFile[dotIndex], ".jpg") != 0 &&
+        strcmp(&jpgFile[dotIndex], ".jpeg") != 0 &&
+        strcmp(&jpgFile[dotIndex], ".jpe") != 0 &&
+        strcmp(&jpgFile[dotIndex], ".jfif" ) != 0) ||
+        !fileExists(jpgFile)) {
+        printf("ERROR: Invalid image file path %s\n \tMake sure the file \
+                exists and is a jpg", jpgFile);
+        return 1;
+    }
+    // Do check on optional message text file
+    // Make sure it has .txt extenssion and exists if tag is -w
+    *mssgFilePath = argc == 2 ? NULL : argv[3];
+    if (*mssgFilePath != NULL) {
+        // Extenssion checks
+        if (strlen(*mssgFilePath) < 4) {
+            printf("ERROR: Invalid text file %s\n", *mssgFilePath);
+            return 1;
+        }
+        char *ending = &(*mssgFilePath[strlen(*mssgFilePath) - 4]);
+        if (strcmp(ending, ".txt") != 0) {
+            printf("ERROR: Invalid text file %s\n", *mssgFilePath);
+            return 1;
+        }
+        // Existance check
+        if (tag[1] == 'w' && !fileExists(mssgFilePath)) {
+            printf("ERROR: If hiding a message, %s must exist\n", mssgFilePath);
+            return 1;
+        }
+    }
+
     return 0;
 }
 
@@ -402,27 +516,23 @@ int hideMessage(char* filePath, char* input) {
  * Checks to make sure that command entered by user is valid and executes it.
  */
 int main(int argc, char** argv) {
-    if (argc <= 1) {
-        printf("ERROR THIS COMMAND MUST BE INVOKED WITH AT LEAST ONE PARAMETER\n");
-        return 1;
-    }
     
-    char* tag = argv[1];
-    char* mssgFilePath;
-    int (*operation)(char*,char*);
-    
-    if(tag[0] != '-' || strlen(tag) != 2) {
-        printf(ERROR_TAG_MESSAGE);
+    char* tag;           // command parameter to use, should be argv[1]
+    char* mssgFilePath;  // jpg parameter, should be argv[2]
+    char* imgFileName;   // txt parameter, should be NULL or argv[3]
+    if (checkArgs(argc, argv, &tag, &imgFileName, &mssgFilePath)) {
         return 1;
     }
 
+    int (*operation)(char*,char*);
     switch(tag[1]) {
         case 'r':  // read/extract  message from file
-            mssgFilePath = "extracted_messages.txt";
+            if (mssgFilePath == NULL) {
+                mssgFilePath = "extracted_messages.txt";
+            }
             operation = &extractMessage;
             break;
         case 'w':  // write/hide message in file
-            mssgFilePath = NULL;
             operation = &hideMessage;
             break;
         default:
@@ -430,14 +540,12 @@ int main(int argc, char** argv) {
             return 1;
     }
     
-    for(int i = 2; i < argc; i++) {
-        char* imgFileName = argv[i];
-        if((*operation)(imgFileName, mssgFilePath)) {
-            printf("WARNING, %s failed for %s\n", tag, imgFileName);
-        }
-        else {
-            printf("COMPLETED TASK FOR %s\n", imgFileName);
-        }
+    if((*operation)(imgFileName, mssgFilePath)) {
+        printf("WARNING, %s failed for %s\n", tag, imgFileName);
     }
+    else {
+        printf("COMPLETED TASK FOR %s\n", imgFileName);
+    }
+
     return 0;
 }

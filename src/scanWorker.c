@@ -581,9 +581,10 @@ int processBit(scanWorker *sw, jpegStats *stats, unsigned char *bit) {
 }
 
 /**
- * Finds the number of characters that can be written into jpeg file with
- * jpegStats stats and size fileLength. After this is executed, file's cursor
- * will remain unchanged, as well as its contents
+ * Finds the number of characters (minus ending 0 byte)
+ * that can be written into jpeg file with jpegStats stats and size fileLength.
+ * After this is executed, file's cursor will remain unchanged, as well as its
+ * contents
  *
  * Assumes file's cursor is right after SOS segment (points to first bit of
  * actual, quantized data).
