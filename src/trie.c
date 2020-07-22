@@ -110,7 +110,7 @@ dhtTrie* createDhtTrie(FILE* jpegFile, unsigned short *bytesProcessed) {
         After every iteration, nodeQueue will only contain nodes in the same depth 
         in left-right order
     */
-    for(char bucket = 0; bucket < 16; bucket++) {
+    for(unsigned char bucket = 0; bucket < 16; bucket++) {
         dhtTrie* tempNode;
         // Place list of values into appropriate nodes
         for(char i = 0; i < elementsPerDepth[bucket]; i++) {
