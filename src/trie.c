@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "trie.h"
 #include "csteg.h"
-#include "queue.h"
+#include "fifo.h"
 #ifdef TESTING
     #include <assert.h>
 #endif
@@ -100,9 +100,9 @@ dhtTrie* createDhtTrie(FILE* jpegFile, unsigned short *bytesProcessed) {
     root->zero = initNode();
     root->one = initNode();
     // init queue of nodes to place new elements into or expand out
-    queue_t *nodeQueue = queue_new();
-    queue_append(nodeQueue, (void*)root->zero);
-    queue_append(nodeQueue, (void*)root->one);
+    fifo *nodeQueue = fifoInit();
+    fifoAppend(nodeQueue, (void*)root->zero);
+    fifoAppend(nodeQueue, (void*)root->one);
     /*
      Constructs dhTrie structure for the given data
      Iteration Invariant(s)
@@ -115,10 +115,10 @@ dhtTrie* createDhtTrie(FILE* jpegFile, unsigned short *bytesProcessed) {
         dhtTrie* tempNode;
         // Place list of values into appropriate nodes
         for(char i = 0; i < elementsPerDepth[bucket]; i++) {
-            if (queue_dequeue(nodeQueue, (void**)&tempNode) != 0) { // failed
+            if (fifoRemove(nodeQueue, (void**)&tempNode) != 0) { // failed
                 // TODO: Add more stuff here, like freeing stuff
                 destroyDhtTrie(root);
-                queue_free(nodeQueue);
+                destroyFifo(nodeQueue);
                 free(data);
                 return NULL;
             }
@@ -129,22 +129,22 @@ dhtTrie* createDhtTrie(FILE* jpegFile, unsigned short *bytesProcessed) {
         }
 
          // Expand nodes at current depth that don't have a value
-        int nodesToExpand = queue_length(nodeQueue);
+        int nodesToExpand = getFifoLength(nodeQueue);
         for(int i = 0; i < nodesToExpand; i++) {
-            queue_dequeue(nodeQueue, (void**)&tempNode);
+            fifoRemove(nodeQueue, (void**)&tempNode);
             tempNode->zero = initNode();
-            queue_append(nodeQueue, (void*)tempNode->zero);
+            fifoAppend(nodeQueue, (void*)tempNode->zero);
             tempNode->one = initNode();
-            queue_append(nodeQueue, (void*)tempNode->one);
+            fifoAppend(nodeQueue, (void*)tempNode->one);
         }
     }
     
     // Free queue since no longer needed
     void* dumpBuffer = NULL;
-    while (queue_length(nodeQueue) > 0) {
-        queue_dequeue(nodeQueue, &dumpBuffer);
+    while (getFifoLength(nodeQueue) > 0) {
+        fifoRemove(nodeQueue, &dumpBuffer);
     }
-    queue_free(nodeQueue);
+    destroyFifo(nodeQueue);
 
     free(data);
     

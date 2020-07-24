@@ -4,17 +4,17 @@ CFLAGS := -Wall -Werror
 .PHONY: all clean
 .PHONY: debug
 
-all: bin/queue.o bin/trie.o bin/scanWorker.o bin/csteg.o csteg.bin
+all: bin/fifo.o bin/trie.o bin/scanWorker.o bin/csteg.o csteg.bin
 
 debug: CFLAGS += -DTESTING -g
 debug: clean all
 
 # Use -c option since dependencies of final product
 # don't need immediate linking
-bin/queue.o: src/queue.c src/queue.h
-	gcc -c $(CFLAGS) -o $@ src/queue.c
+bin/fifo.o: src/fifo.c src/fifo.h
+	gcc -c $(CFLAGS) -o $@ src/fifo.c
 
-bin/trie.o: src/trie.c src/trie.h src/queue.h src/csteg.h
+bin/trie.o: src/trie.c src/trie.h src/fifo.h src/csteg.h
 	gcc -c $(CFLAGS) -o $@ src/trie.c
 
 bin/scanWorker.o: src/scanWorker.c src/scanWorker.h src/csteg.h src/trie.h
