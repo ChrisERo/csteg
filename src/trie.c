@@ -2,8 +2,9 @@
 #include "trie.h"
 #include "csteg.h"
 #include "queue.h"
-
-#define MAX_NUMBER_OF_TABLES_ALLOWED 6  // 2 tables per color channel
+#ifdef TESTING
+    #include <assert.h>
+#endif
 
 /*
  *  !isEmpty && one == 0 && zero == 0 <--> value is a value and corresponds to 
@@ -199,29 +200,27 @@ int showDebugInfo(dhtTrie* t, char* path, int depth) {
 }
 
 /**
- * Moves data past dhts portions
+ * Moves cursor of jpegFile past dhts portions
  */
-dhts* createDhts(FILE *jpegFile) {
+int buildDhts(FILE *jpegFile, dhts *tables) {
     #ifdef TESTING
+        assert(tables != NULL);
         printf("\tDHT Data Parseing:\n");
     #endif
-
-    dhts *tables = (dhts*)calloc(1, sizeof(dhts)); // Initialize so that all pointers are NULL
-    tables->tablesLeftToMake = MAX_NUMBER_OF_TABLES_ALLOWED;
 
     // Make sure this is a DHT segment and get length of segment
     unsigned short segmentLength = getLengthOfDHTSegment(jpegFile);
     if (segmentLength == 0) {
         destroyDhts(tables);
-        return NULL;
+        return 1;
     }
 
     unsigned short bytesProcessed = 2;  // segmentLength includes length bytes
     while (bytesProcessed < segmentLength) {
         if (tables->tablesLeftToMake == 0) {
-            printf("TOO MANY TABLES");
+            printf("ERROR: TOO MANY TABLES");
             destroyDhts(tables);
-            return NULL;
+            return 1;
         }
         // Get index to place table in tables->tables
         unsigned char indexData;
@@ -235,18 +234,18 @@ dhts* createDhts(FILE *jpegFile) {
                     indexData, tableId, discreteOrAlternating);
         #endif
         int index = 2*tableId + discreteOrAlternating;
-        if (index < 0 || index > MAX_NUMBER_OF_TABLES || 
+        if (index < 0 || index >= MAX_NUMBER_OF_TABLES ||
             tables->tables[index] != NULL) {
             printf("ERROR: Invalid Huffman Table id values: %d %d\n",
                     tableId, discreteOrAlternating);
             destroyDhts(tables);
-            return NULL;
+            return 1;
         }
         
         dhtTrie *tempNode = createDhtTrie(jpegFile, &bytesProcessed);
         if(!tempNode) {
             destroyDhts(tables);
-            return NULL;
+            return 1;
          } else {
              tables->tables[index] = tempNode;
              tables->tablesLeftToMake--;
@@ -267,7 +266,7 @@ dhts* createDhts(FILE *jpegFile) {
         }
     #endif
 
-    return tables;
+    return 0;
 }
 
 

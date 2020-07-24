@@ -97,7 +97,9 @@ int populatejpegStats(jpegStats** jpegStatsHolder, FILE* jpegFile,
                              (*jpegStatsHolder)->colorCounts[Y_ID - 1];
     #ifdef TESTING
         // Make sure that mcuSize makes sense for image
-        assert(totalPixels % mcuSize == 0);
+        printf("\tLENGTH: %d HEIGHT: %d\n", length, height);
+        printf("\tTOTAL PIXELS: %d MCU SIZE: %d\n", totalPixels, mcuSize);
+        //assert(totalPixels % mcuSize == 0);
     #endif
     
     (*jpegStatsHolder)->mcuCount = totalPixels / mcuSize;
@@ -216,16 +218,29 @@ int matchColorsToTables(FILE* jpegFile, jpegStats* jpegStats,
  * Moves the cursor of jpegFile to the byte immediately after the Start of 
  * Scan (SOS) flag of the SOS section. Also initialises dhts object, storeing
  * it in dhtTables.
- * 
+ *
  * Assumes jpegFile is pointing to the third byte of a JPEG file
+ *
+ * Assumes **dhtTables is NULL at time function is executed
  * 
  * returns 0 on success some other value if failiure
  */ 
 int setFileCursor(FILE *jpegFile, dhts** dhtTables, 
                   jpegStats** jpegStatsHolder) {
-    unsigned short buffer[3]; // Store section marker and length respectively.
+    // Allocate space for needed structs
     *jpegStatsHolder = malloc(sizeof(jpegStats));
+    *dhtTables = (dhts*)calloc(1, sizeof(dhts));  // All tables start NULL
+    (*dhtTables)->tablesLeftToMake = MAX_NUMBER_OF_TABLES_ALLOWED;
+    if (*dhtTables == NULL || jpegStatsHolder == NULL) {
+        puts("ERROR ALLOCATING NEEDED SPACE");
+        destroyDhts(*dhtTables);
+        if (*jpegStatsHolder != NULL) {
+            free(*jpegStatsHolder);
+        }
+        return 1;
+    }
 
+    unsigned short buffer[3]; // Stores section marker and length respectively.
     fread((void*)&buffer, 1, 4, jpegFile);
     buffer[0] = BYTE_TO_SHORT_VALUE(buffer[0]);
     buffer[1] = BYTE_TO_SHORT_VALUE(buffer[1]);
@@ -244,8 +259,7 @@ int setFileCursor(FILE *jpegFile, dhts** dhtTables,
                 break;
             case DHT_START:
                 fseek(jpegFile, -4, SEEK_CUR);
-                *dhtTables = createDhts(jpegFile);
-                result = *dhtTables == NULL;
+                result = buildDhts(jpegFile, *dhtTables);
                 break;
             default :
                 result = fseek(jpegFile, buffer[1] - MARKER_LENGTH, SEEK_CUR);
@@ -342,7 +356,7 @@ char* askForMessage(char* filePath, long maxMessageSize) {
  * array to return. Returns NULL if error occurred
  */
 char* loadMessage(char* filePath, long maxMessageSize) {
-    printf("Loading at most %ld characters from %s:\n",
+    printf("Loading at most %ld characters from %s\n",
             maxMessageSize, filePath);
     // Use calloc to make sure that NULL is in array
     size_t allocSize = maxMessageSize+1;
@@ -389,8 +403,8 @@ int extractMessage(char *imgFilePath, char *outputFile) {
         return 1;
     }
     FILE *out = fopen(outputFile, "w");
-    fprintf(out, "EXTRACTED MESSAGE FROM [%s]:\n%s", imgFilePath,
-            hiddenMessage);
+    printf("EXTRACTED MESSAGE FROM %s INTO %s\n", imgFilePath, outputFile);
+    fprintf(out, "%s", hiddenMessage);
     fclose(out);
 
     free(hiddenMessage);

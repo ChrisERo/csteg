@@ -29,7 +29,8 @@ unsigned char getValue(dhtTrie*);
 dhtTrie* traverseTrie(dhtTrie*, char);
 
 #define MAX_NUMBER_OF_TABLES 8  // max number of Huffman tables in a JPG
-
+#define MAX_NUMBER_OF_TABLES_ALLOWED 6  // We support only YCrCb
+                                        // and 2 tables per color channel
 /**
  * struct for storeing Huffman tables defined in the DHT segment(s)
  * index of a table in tables is 2*tableId + isDC
@@ -41,10 +42,11 @@ typedef struct dhts {
 
 
 /**
- * Creates dhts struct with DH tables populated
- * Assumes FILE*'s pointer is at start of DHT segment
+ * Populates tables of dhts* with table that will be read from FILE*,
+ * returning 1 if there was an issue and 0 otherwise
+ * Assumes FILE*'s pointer is at start of a DHT segment
  */
-dhts* createDhts(FILE*);
+int buildDhts(FILE*, dhts*);
 
 /**
  * Frees memory allocated from heap by dhts* struct 

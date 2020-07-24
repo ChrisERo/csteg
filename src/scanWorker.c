@@ -189,9 +189,11 @@ int readComponentElement(scanWorker *scanner, mcu *mcuData,
 /**
  * Checks to see that stats->restartInterval MCUs have been read and, if so,
  * reads past the restart interval and any useless bits in between the
- * interval marker and the bit referenced by scanner's attributes. returns 1
+ * interval marker and the bit referenced by scanner's attributes. Returns 1
  * in the case of error (or when isEndOfScan(scanner, scanner->bytesRead)) is
  * true.
+ *
+ * If this is not the case, function is a noop
  */
 int skipPastRestartInterval(scanWorker *scanner, jpegStats *stats) {
     if (stats->restartInterval != 0 &&
@@ -250,8 +252,10 @@ int loadNextMCU(mcu* mcuData, scanWorker* scanner, jpegStats* stats) {
                                        // read 1 coeficinet
         // Read DC and store into mcuData
         if (readComponentElement(scanner, &mcuBuffer,dcTable, 0)) {
-            printf("ERROR reading DC of MCU: %d colorId: %d comp: %d\n", 
+            if (!isEndOfScan(scanner, scanner->bytesRead)) {
+                printf("ERROR1 reading DC of MCU: %d colorId: %d comp: %d\n",
                     scanner->mcusRead, colorId, comp);
+            }
             return 1;
         }
         #ifdef TESTING
@@ -264,8 +268,10 @@ int loadNextMCU(mcu* mcuData, scanWorker* scanner, jpegStats* stats) {
             // ACs read
             if (readComponentElement(scanner, &mcuBuffer, acTable, 1) ||  
                 mcuBuffer.acCurrentlyOn > MAX_AC_COEFFICIENTS) {
-                printf("ERROR reading AC of MCU: %d colorId: %d comp: %d | coeficients read: %d\n", 
+                if (!isEndOfScan(scanner, scanner->bytesRead)) {
+                    printf("ERROR2 reading AC of MCU: %d colorId: %d comp: %d | coeficients read: %d\n",
                     scanner->mcusRead, colorId, comp, mcuBuffer.acCurrentlyOn);
+                }
                 return 1;
             }
             if (mcuBuffer.bit == EOB_ENCOUNTERED) {
@@ -284,8 +290,10 @@ int loadNextMCU(mcu* mcuData, scanWorker* scanner, jpegStats* stats) {
     acTable = stats->acHuffmanTables[colorId];
     mcuBuffer.acCurrentlyOn = 0;  // So that logic of assert works
     if (readComponentElement(scanner, &mcuBuffer, dcTable, 0)) {
-        printf("ERROR reading DC of MCU: %d colorId: %d comp: %d\n", 
+        if (!isEndOfScan(scanner, scanner->bytesRead)) {
+            printf("ERROR3 reading DC of MCU: %d colorId: %d comp: %d\n",
                 scanner->mcusRead, colorId, stats->colorCounts[colorId]);
+        }
         return 1;
     }
     #ifdef TESTING
@@ -297,14 +305,16 @@ int loadNextMCU(mcu* mcuData, scanWorker* scanner, jpegStats* stats) {
     mcuData->bitLength = 0;
     mcuData->index = 0;
     // Process first AC data of MCU scanner points to and store in mcuData
-    if (readComponentElement(scanner, mcuData, acTable, 1) ||  
+    if (readComponentElement(scanner, mcuData, acTable, 1) ||
         mcuData->acCurrentlyOn > MAX_AC_COEFFICIENTS || // rest check sanity
         (mcuData->acCurrentlyOn == MAX_AC_COEFFICIENTS &&
-        mcuData->bit != EOB_ENCOUNTERED) || 
+        mcuData->bit != EOB_ENCOUNTERED) ||
         (mcuData->bit == ZRL_ENCOUNTERED && mcuData->acCurrentlyOn != 16)) {
-        printf("ERROR reading AC of MCU: %d colorId: %d comp: %d | coeficients read: %d\n", 
-            scanner->mcusRead, colorId, stats->colorCounts[colorId], 
-            mcuData->acCurrentlyOn);
+        if (!isEndOfScan(scanner, scanner->bytesRead)) {
+            printf("ERROR4 reading AC of MCU: %d colorId: %d comp: %d | coeficients read: %d\n",
+                scanner->mcusRead, colorId, stats->colorCounts[colorId],
+                mcuData->acCurrentlyOn);
+            }
         return 1;
     } 
 
@@ -340,12 +350,6 @@ void destroyScanWorker(scanWorker *scanner) {
  * 
  */
 scanWorker* initScanWorker(FILE* file, jpegStats* stats, long fileLength) {
-    // Make sure restart interval not bad
-    if (stats->restartInterval < 2) {
-        printf("ERROR: Bad Restart Interval: %d, must be >= 2", 
-                stats->restartInterval);
-        return NULL;
-    }
     #ifdef TESTING
         assert(file != NULL && stats != NULL);
     #endif
