@@ -18,3 +18,5 @@ As an example, the command ```./csteg.bin -w img.jpg mssg.txt``` writes the mess
 
 ## Important Notes
 If one is reading a file into some text file, it is assumed that the directories of the file path (though not the actual file) already exist.
+
+The binaries included were compiled for a mac. To recompile the program on your target system, please run ```make clean```, followed by ```make``` as described above.
